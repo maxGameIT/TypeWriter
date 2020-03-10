@@ -27,11 +27,11 @@
 
         void Awake()
         {
+            tmpdict = new Dictionary<int, Match>();
             if (OnAwakePlay)
             {
                 Init(Text.text);
             }
-            tmpdict = new Dictionary<int, Match>();
         }
 
         public void Init(string str, Action callback = null)
@@ -100,7 +100,6 @@
                 {
                     //判断计时器时间是否到达
                     timer = 0;
-                    currentPos++;
                     int len = _currentText.Length;
                     string endcode = String.Empty;
                     if (currentPos < len)
@@ -136,6 +135,7 @@
                             }
                         }
                     }
+                    currentPos++;
                     int curpos = currentPos > _currentText.Length ? _currentText.Length : currentPos;
                     string content = String.Format("{0}{1}",_currentText.Substring(0, curpos),endcode);
                     Text.text = content; //刷新文本显示内容
