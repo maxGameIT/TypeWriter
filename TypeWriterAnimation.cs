@@ -23,6 +23,8 @@
         private string _finalText; //保存需要显示的文字
         protected static Regex tagPattern = new Regex("<[^>]*>");
         private Dictionary<int, Match> tmpdict;
+        private string _totalText;//所有文字
+        private int lastindex = 0;
         public bool IsPlaying => isActive;
 
         void Awake()
@@ -34,13 +36,20 @@
             }
         }
 
-        public void Init(string str, Action callback = null)
+        public void Init(string str,Action callback = null)
+        {
+            Init(str, 0, str.Length, callback);
+        }
+
+        public void Init(string str,int index,int len, Action callback = null)
         {
             timer = 0;
+            _totalText = str;
             isActive = true;
             charsPerSecond = Mathf.Max(0.2f, charsPerSecond);
             Text = GetComponent<TextMeshProUGUI>();
-            _finalText = str;
+            this.SubLitStr(str,index,len);
+            _finalText =  ReplaceStr(str).Substring(index,len);
             _currentText = _finalText;
             if (!IsEnable)
             {
@@ -110,10 +119,10 @@
                             var item1 = tmplist[i];
                             var item2 = tmplist[i+1];
                             int finallen = 0;
-                            if (currentPos == item1.Index)
+                            if (currentPos == item1.Index-lastindex)
                             {
-                                finallen = item1.Index;
-                                if (item1.Index > _currentText.Length)
+                                finallen = item1.Index-lastindex;
+                                if (item1.Index-lastindex> _currentText.Length)
                                 {
                                     finallen = _currentText.Length;
                                 }
@@ -122,16 +131,20 @@
                                 endcode = item2.Value;
                                 break;
                             }
-                            if (currentPos == item2.Index)
+                            if (currentPos == item2.Index-lastindex)
                             {
-                                finallen = item2.Index;
-                                if (item2.Index > _currentText.Length)
+                                finallen = item2.Index-lastindex;
+                                if (item2.Index-lastindex > _currentText.Length)
                                 {
                                     finallen = _currentText.Length;
                                 }
                                 _currentText = _currentText.Insert(finallen, item2.Value);
                                 currentPos += item2.Length;
                                 endcode = String.Empty;
+                            }
+                            if (i == tmplist.Count)
+                            {
+                                ResetText();
                             }
                         }
                     }
@@ -156,13 +169,29 @@
             timer = 0;
             currentPos = 0;
             _currentText = _finalText;
+            int i = 0;
             foreach (var it in tmpdict)
             {
-                _currentText = _currentText.Insert(it.Value.Index, it.Value.Value);
+                _currentText = _currentText.Insert(it.Value.Index-lastindex, it.Value.Value);
+                i++;
+                if (i == tmpdict.Count)
+                {
+                    ResetText();
+                }
             }
             Text.text = _currentText;
             onFinish?.Invoke();
         }
+
+        private void ResetText()
+        {
+            lastindex += _currentText.Length;
+            if (lastindex >= _totalText.Length)
+            {
+                lastindex = 0;
+            }
+        }
+        
 
         /// <summary>
         /// 把富文本标签移除掉
@@ -199,7 +228,6 @@
             {
                 oldvalue = match[0];
             }
-
             for (int i = 0; i < match.Count; i++)
             {
                 index = match[i].Index;
@@ -208,12 +236,10 @@
                     totallen += oldvalue.Length;
                     index -= totallen;
                 }
-
                 if (index >= startindex && index < startindex + len)
                 {
                     tmp.Add(i, match[i]);
                 }
-
                 oldvalue = match[i];
             }
 
