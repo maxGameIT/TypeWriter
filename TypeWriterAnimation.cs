@@ -22,16 +22,15 @@
         private string _currentText;
         private string _finalText; //保存需要显示的文字
         protected static Regex tagPattern = new Regex("<[^>]*>");
-        private SortedDictionary<int, Match> tmpdict;
+        private SortedDictionary<int, Match> tmpdict = new SortedDictionary<int, Match>();
         private string _totalText; //所有文字
         private int lastindex = 0;
         private int reset = 0;
-        private static int lastlen = 0;
+        private static SortedDictionary<int,Match> repeatItems = new SortedDictionary<int, Match>();
         public bool IsPlaying => isActive;
 
         void Awake()
         {
-            tmpdict = new SortedDictionary<int, Match>();
             if (OnAwakePlay)
             {
                 Init(Text.text);
@@ -48,7 +47,7 @@
             timer = 0;
             _totalText = str;
             isActive = true;
-            charsPerSecond = Mathf.Max(0.2f, charsPerSecond);
+            // charsPerSecond = Mathf.Max(0.2f, charsPerSecond);
             Text = GetComponent<TextMeshProUGUI>();
             this.SubLitStr(str, index, len);
             _finalText = ReplaceStr(str).Substring(index, len);
@@ -73,6 +72,13 @@
         /// <param name="len"></param>
         public void SubLitStr(string content, int index, int len)
         {
+            foreach (var match in tmpdict)
+            {
+                if (repeatItems.ContainsKey(match.Key))
+                {
+                    repeatItems.Remove(match.Key);
+                }
+            }
             tmpdict.Clear();
             tmpdict = SubLitString(content, index, len, ref tmpdict);
         }
@@ -113,15 +119,19 @@
                     //判断计时器时间是否到达
                     timer = 0;
                     int len = _currentText.Length;
+                    int repeat = 0;
                     string endcode = String.Empty;
                     int finallen = 0;
-                    
                     if (currentPos < len)
                     {
                         List<Match> tmplist = tmpdict.Values.ToList();
-                        for (int i = 0; i < tmplist.Count; i += 2)
+                        for (int i = 0; i < tmplist.Count; i ++)
                         {
                             var item1 = tmplist[i];
+                            if (i+1 >= tmplist.Count)
+                            {
+                                break;
+                            }
                             var item2 = tmplist[i + 1];
                             if (currentPos == item1.Index - lastindex + reset)
                             {
@@ -132,8 +142,7 @@
                                 }
                                 _currentText = _currentText.Insert(finallen+reset, item1.Value);
                                 currentPos += item1.Length;
-                                endcode = item2.Value;
-                                break;
+                                endcode += item2.Value;
                             }
                             if (currentPos == item2.Index - lastindex + reset)
                             {
@@ -146,17 +155,17 @@
                                 currentPos += item2.Length;
                                 endcode = String.Empty;
                             }
-                            else if(item1.Index - lastindex < 0 && currentPos == 0)
+                            else if(item1.Index - lastindex < 0 && currentPos == reset)
                             {
-                                var first = tmpdict.Values.First();
-                                if (first.Index - lastindex < 0)
-                                {
-                                    _currentText = _currentText.Insert(0, first.Value);
-                                    currentPos += first.Length;
-                                    endcode = item2.Value;
-                                    reset = currentPos;
-                                }
+                                _currentText = _currentText.Insert(reset, item1.Value);
+                                currentPos += item1.Length;
+                                ++repeat;
+                                reset = currentPos;
                             }
+                        }
+                        for (int i = 0; i < repeat; i++)
+                        {
+                            endcode += tmplist[i+repeat].Value;
                         }
                     }
                     currentPos++;
@@ -181,40 +190,56 @@
             currentPos = 0;
             reset = 0;
             _currentText = _finalText;
-            bool isfirstinsert = false;
+            int firstlen = 0;
             foreach (var it in tmpdict)
             {
                 int index = it.Value.Index - lastindex;
                 if (it.Value.Index - lastindex < 0)
                 {
-                    isfirstinsert = true;
+                    firstlen++;
                     continue;
                 }
                 else if (it.Value.Index - lastindex > _currentText.Length)
                 {
                     index = _currentText.Length;
                 }
-
                 _currentText = _currentText.Insert(index, it.Value.Value);
             }
-
-            var first = tmpdict.Values.First();
-            if (isfirstinsert)
+            if (tmpdict.Count > 0 &&　firstlen > 0)
             {
+                var list = tmpdict.Values.ToList();
+                var keys = tmpdict.Keys.ToList();
+                var first = tmpdict.Values.First();
+                var firstkey = tmpdict.Keys.First();
                 _currentText = _currentText.Insert(0, first.Value);
+                for (int i = 1; i < firstlen; i++)
+                {
+                    _currentText = _currentText.Insert(first.Length, list[i].Value);
+                    first = list[i];
+                }
             }
             ResetText();
             Text.text = _currentText;
             onFinish?.Invoke();
         }
-
+        //重置上一次截断位置索引
         private void ResetText()
         {
+            int lastlen = 0;
+            int len = 0;
+            foreach (var kMatch in repeatItems)
+            {
+                lastlen += kMatch.Value.Length;
+                if (kMatch.Value.Value.Contains("</"))
+                {
+                    len += kMatch.Value.Length;
+                }
+            }
             lastindex += _currentText.Length - lastlen;
-            if (lastindex >= _totalText.Length - lastlen)
+            if (lastindex >= _totalText.Length - len)
             {
                 lastindex = 0;
-                lastlen = 0;
+                repeatItems.Clear();
             }
         }
 
@@ -244,6 +269,7 @@
             return match;
         }
 
+        
         public static SortedDictionary<int, Match> SubLitString(string content, int startindex, int len,
             ref SortedDictionary<int, Match> tmp)
         {
@@ -269,27 +295,54 @@
                 {
                     tmp.Add(i, match[i]);
                 }
-
                 oldvalue = match[i];
             }
-            lastlen = 0;
             if (tmp.Count > 0)
             {
-                int i = 0;
-                Match value = tmp.Values.First();
-                int key = tmp.Keys.First();
-                if (value.Value.Contains("</"))
+                int Startlen = 0;
+                int endlen = 0;
+                foreach (var it in tmp)
                 {
-                    tmp.Add(key - 1, match[key - 1]);
-                    lastlen += match[key - 1].Length;
+                    Match value = it.Value;
+                    if (value.Value.Contains("</"))
+                    {
+                        Startlen++;
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
-
-                value = tmp.Values.Last();
-                key = tmp.Keys.Last();
-                if (!value.Value.Contains("</"))
+                List<Match> values = tmp.Values.ToList();
+                for (int i = values.Count-1; i >= 0; i--)
                 {
-                    tmp.Add(key + 1, match[key + 1]);
-                    lastlen += match[key + 1].Length;
+                    Match value = values[i];
+                    if (!value.Value.Contains("</"))
+                    {
+                        endlen++;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                int firstkey = tmp.Keys.First();
+                int endkey = tmp.Keys.Last();
+                for (int i = 1; i <= Startlen; i++)
+                {
+                    tmp.Add(firstkey-i,match[firstkey-i]);
+                    if (!repeatItems.ContainsKey(firstkey - i))
+                    {
+                        repeatItems.Add(firstkey - i,match[firstkey-i]);
+                    }
+                }
+                for (int i = 1; i <= endlen; i++)
+                {
+                    tmp.Add(endkey+i,match[endkey+i]);
+                    if (!repeatItems.ContainsKey(endkey + i))
+                    {
+                        repeatItems.Add(endkey + i,match[endkey + i]);
+                    }
                 }
             }
             return tmp;
